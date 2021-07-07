@@ -116,15 +116,10 @@ def main():
 	architect = Architect(model, args, use_cuda)
 
 	for epoch in range(args.epochs):
-		scheduler.step()
-		lr = scheduler.get_lr()[0]
-		logging.info('epoch %d lr %e', epoch, lr)
-
-		genotype = model.genotype()
-		logging.info('genotype = %s', genotype)
-
 		print(F.softmax(model.alphas_normal, dim=-1))
-		print(F.softmax(model.alphas_reduce, dim=-1))
+
+		lr = scheduler.get_last_lr()[0]
+		logging.info('epoch %d lr %e', epoch, lr)
 
 		# training
 		train_acc, train_obj = train(train_queue, valid_queue, model, architect, criterion, optimizer, lr)
@@ -134,6 +129,9 @@ def main():
 		valid_acc, valid_obj = infer(valid_queue, model, criterion)
 		logging.info('valid_acc %f', valid_acc)
 
+		# update lr
+		scheduler.step()
+		
 		utils.save(model, os.path.join(args.save, 'weights.pt'))
 
 
@@ -169,7 +167,7 @@ def train(train_queue, valid_queue, model, architect, criterion, optimizer, lr, 
 		loss = criterion(logits, target)
 
 		loss.backward()
-		nn.utils.clip_grad_norm(model.parameters(), args.grad_clip)
+		nn.utils.clip_grad_norm_(model.parameters(), args.grad_clip)
 		optimizer.step()
 
 		prec1, prec5 = utils.accuracy(logits, target, topk=(1, 5))
