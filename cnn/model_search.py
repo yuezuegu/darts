@@ -72,13 +72,14 @@ class Cell(nn.Module):
 
 class Network(nn.Module):
 
-  def __init__(self, init_filters, num_classes, layers, criterion, use_cuda=False, steps=4, multiplier=4, stem_multiplier=3):
+  def __init__(self, init_filters, num_classes, layers, criterion, init_tau, use_cuda=False, steps=4, multiplier=4, stem_multiplier=3):
     super(Network, self).__init__()
     self._init_filters = init_filters
     self._num_classes = num_classes
     self._layers = layers
     self._criterion = criterion
     self._steps = steps
+    self._tau = init_tau
     self._multiplier = multiplier
     self.use_cuda = use_cuda
     no_filters = stem_multiplier*init_filters
@@ -118,7 +119,7 @@ class Network(nn.Module):
     s0 = self.stem(input, self.alphas_channels)
     for i, cell in enumerate(self.cells):
       alphas_normal = F.softmax(self.alphas_normal, dim=-1)
-      alphas_channels = F.softmax(self.alphas_channels, dim=-1)
+      alphas_channels = F.gumbel_softmax(self.alphas_channels, tau=self._tau, hard=False, eps=1e-10, dim=-1)
       s0 = cell(s0, alphas_normal, alphas_channels)
     out = self.global_pooling(s0)
     logits = self.classifier(out.view(out.size(0),-1))
@@ -137,12 +138,18 @@ class Network(nn.Module):
       alphas_normal = alphas_normal.cuda()
     self.alphas_normal = Variable(alphas_normal, requires_grad=True)
 
-    self.alphas_channels = 1e-3*torch.randn(self._init_filters)
-    self.alphas_channels = Variable(self.alphas_channels, requires_grad=True)
+    alphas_channels = 1e-3*torch.randn(self._init_filters)
+    if self.use_cuda:
+      alphas_channels = alphas_channels.cuda()
+    self.alphas_channels = Variable(alphas_channels, requires_grad=True)
 
     self._arch_parameters = [
       self.alphas_normal,
+      self.alphas_channels
     ]
+
+  def update_tau(self, tau_anneal_rate):
+    self._tau *= tau_anneal_rate
 
   def arch_parameters(self):
     return self._arch_parameters
